@@ -89,7 +89,7 @@ PART (b): TF-IDF Score
 
 # NOTE: top100df.txt must exist locally before running this step
 # It is loaded by TFIDFScore.java from the hardcoded path:
-# /Users/nishantkhatri/Desktop/hadoop/problem2/top100df.txt
+# problem2/top100df.txt
 # Make sure this file is in place before running.
 
 # Run TFIDFScore on full dataset
