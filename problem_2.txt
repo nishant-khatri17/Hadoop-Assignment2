@@ -1,0 +1,149 @@
+================================================================
+DAS 839 - NoSQL Systems | Assignment II
+Problem 2: Indexing Documents via Hadoop
+================================================================
+
+PREREQUISITES
+-------------
+- Apache Hadoop installed and running (start with: start-all.sh)
+- Java 17+
+- opennlp-tools-1.9.3.jar (for Porter Stemmer)
+- Files required locally:
+    stopwords.txt
+    top100df.txt  (generated after Part a)
+- Wikipedia articles already uploaded to HDFS at /wiki/input/
+  (If not, see problem_1.txt STEP 1 for upload instructions)
+
+DIRECTORY STRUCTURE
+-------------------
+problem2/
+    src/
+        DocumentFrequency.java
+        TFIDFScore.java
+        CustomFileInputFormat.java
+        CustomLineRecordReader.java
+    classes/
+    opennlp_classes/
+    stopwords.txt
+    opennlp-tools-1.9.3.jar
+    DocumentFrequency.jar
+    TFIDFScore.jar
+    top100df.txt     (generated after Part a)
+    top100terms.txt  (optional — term names only)
+
+================================================================
+STEP 1: COMPILE (if needed)
+================================================================
+
+cd problem2
+
+# Extract opennlp classes
+mkdir -p opennlp_classes
+cd opennlp_classes && jar -xf ../opennlp-tools-1.9.3.jar && cd ..
+
+# Compile DocumentFrequency
+mkdir -p classes
+cp -r opennlp_classes/* classes/
+javac --release 17 \
+    -classpath $(hadoop classpath):opennlp-tools-1.9.3.jar \
+    -d classes \
+    src/CustomFileInputFormat.java \
+    src/CustomLineRecordReader.java \
+    src/DocumentFrequency.java
+
+# Create JAR (merge opennlp classes into JAR)
+jar -cvf DocumentFrequency.jar -C classes .
+
+# Compile TFIDFScore
+javac --release 17 \
+    -classpath $(hadoop classpath):opennlp-tools-1.9.3.jar \
+    -d classes \
+    src/TFIDFScore.java
+
+jar -cvf TFIDFScore.jar -C classes .
+
+================================================================
+PART (a): Document Frequency
+================================================================
+
+# Run DocumentFrequency on full dataset
+time hadoop jar DocumentFrequency.jar DocumentFrequency \
+    /wiki/input /wiki/output2a
+
+# Extract top 100 terms by DF (sorted by count descending)
+hdfs dfs -cat /wiki/output2a/part-r-00000 \
+    | sort -t$'\t' -k2 -rn | head -100 | tee top100df.txt
+
+# Verify — should show 100 lines
+wc -l top100df.txt
+
+# Extract term names only (optional)
+awk '{print $1}' top100df.txt > top100terms.txt
+
+# View sample output
+head -20 top100df.txt
+
+================================================================
+PART (b): TF-IDF Score
+================================================================
+
+# NOTE: top100df.txt must exist locally before running this step
+# It is loaded by TFIDFScore.java from the hardcoded path:
+# /Users/nishantkhatri/Desktop/hadoop/problem2/top100df.txt
+# Make sure this file is in place before running.
+
+# Run TFIDFScore on full dataset
+time hadoop jar TFIDFScore.jar TFIDFScore \
+    /wiki/input /wiki/output2b
+
+# View sample output (format: docID TAB term TAB score)
+hdfs dfs -cat /wiki/output2b/part-r-00000 | head -20
+
+# Count total records
+hdfs dfs -cat /wiki/output2b/part-r-00000 | wc -l
+
+================================================================
+RETRIEVE OUTPUTS
+================================================================
+
+# Copy outputs to local filesystem
+hdfs dfs -get /wiki/output2a/part-r-00000 \
+    output2a_document_frequency.tsv
+
+hdfs dfs -get /wiki/output2b/part-r-00000 \
+    output2b_tfidf_scores.tsv
+
+================================================================
+OUTPUT FORMAT
+================================================================
+
+Part (a) — document_frequency.tsv:
+    TERM<tab>DF
+    Example:
+        apo         9518
+        categori    9381
+        refer       9340
+        ...
+
+Part (b) — tfidf_scores.tsv:
+    ID<tab>TERM<tab>SCORE
+    Example:
+        100005    first      0.8332
+        100005    time       1.7179
+        100005    earli      9.3534
+        ...
+
+================================================================
+NOTES
+================================================================
+- Porter Stemmer is used for term normalization:
+    "running" -> "run", "cities" -> "citi", "history" -> "histori"
+- The TF-IDF formula used is:
+    SCORE = TF * log(10000 / DF + 1)
+- Document ID is derived from the filename (e.g., 100005.txt -> 100005)
+- If a job fails with "Output directory already exists", run:
+    hdfs dfs -rm -r /wiki/output2a
+    hdfs dfs -rm -r /wiki/output2b
+- All jobs were run on a single-node Hadoop setup on macOS.
+- Dataset: Wikipedia-EN-20120601_ARTICLES (10,000 articles, ~166MB)
+- Runtime: Part (a) ~8m 16s, Part (b) ~5m 51s

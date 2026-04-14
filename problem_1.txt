@@ -1,0 +1,227 @@
+================================================================
+DAS 839 - NoSQL Systems | Assignment II
+Problem 1: Co-Occurring Word Matrix Generation
+================================================================
+
+PREREQUISITES
+-------------
+- Apache Hadoop installed and running (start with: start-all.sh)
+- Java 17+
+- Files required locally:
+    stopwords.txt
+    top50words_only.txt  (generated after Part a)
+
+DIRECTORY STRUCTURE
+-------------------
+problem1/
+    src/
+        TopWordsPairs.java
+        CoOccurrencePairs.java
+        CoOccurrenceStripesMapFn.java
+        CoOccurrencePairsMapClass.java
+        CoOccurrenceStripes.java
+        CoOccurrenceStripesMapFn.java
+        CoOccurrenceStripesMapClass.java
+        CustomFileInputFormat.java
+        CustomLineRecordReader.java
+    stopwords.txt
+    TopWordsPairs.jar
+    CoOccurrencePairs.jar
+    CoOccurrenceStripes.jar
+    CoOccurrencePairsAgg.jar      (contains MapFn and MapClass)
+    CoOccurrenceStripesAgg.jar    (contains MapFn and MapClass)
+
+================================================================
+STEP 1: SETUP — Upload data to HDFS
+================================================================
+
+# Upload all 10,000 Wikipedia articles to HDFS
+hdfs dfs -mkdir -p /wiki/input
+hdfs dfs -put <path_to_dataset>/*.txt /wiki/input/
+
+# Upload stopwords to HDFS
+hdfs dfs -mkdir -p /input
+hdfs dfs -put stopwords.txt /input/stopwords.txt
+
+# Verify
+hdfs dfs -ls /wiki/input | wc -l    # should show 10001 (10000 + header)
+hdfs dfs -ls /input/
+
+================================================================
+STEP 2: COMPILE (if needed)
+================================================================
+
+cd problem1
+
+# Compile all source files
+mkdir -p classes
+javac --release 17 -classpath $(hadoop classpath) -d classes \
+    src/CustomFileInputFormat.java \
+    src/CustomLineRecordReader.java \
+    src/TopWordsPairs.java
+
+# Create JAR
+jar -cvf TopWordsPairs.jar -C classes .
+
+# Similarly for other programs:
+javac --release 17 -classpath $(hadoop classpath) -d classes src/CoOccurrencePairs.java
+jar -cvf CoOccurrencePairs.jar -C classes .
+
+javac --release 17 -classpath $(hadoop classpath) -d classes src/CoOccurrenceStripes.java
+jar -cvf CoOccurrenceStripes.jar -C classes .
+
+# Aggregation JARs (contains MapFn and MapClass variants)
+javac --release 17 -classpath $(hadoop classpath) -d classes \
+    src/CoOccurrencePairsMapFn.java src/CoOccurrencePairsMapClass.java
+jar -cvf CoOccurrencePairsAgg.jar -C classes .
+
+javac --release 17 -classpath $(hadoop classpath) -d classes \
+    src/CoOccurrenceStripesMapFn.java src/CoOccurrenceStripesMapClass.java
+jar -cvf CoOccurrenceStripesAgg.jar -C classes .
+
+================================================================
+PART (a): Top 50 Most Frequent Words
+================================================================
+
+# Run
+hadoop jar TopWordsPairs.jar TopWordsPairs \
+    /wiki/input /wiki/output1a \
+    -skippatterns /input/stopwords.txt
+
+# Extract top 50 words sorted by count
+hdfs dfs -cat /wiki/output1a/part-r-00000 \
+    | sort -t$'\t' -k2 -rn | head -50 | tee top50words.txt
+
+# Extract only word names (no counts) — needed for Parts b, c, e
+awk '{print $1}' top50words.txt > top50words_only.txt
+
+# Upload top50 words to HDFS
+hdfs dfs -put -f top50words_only.txt /input/top50words_only.txt
+
+================================================================
+PART (b): Co-Occurrence Matrix — Pairs Approach
+================================================================
+
+# Run for each distance value
+time hadoop jar CoOccurrencePairs.jar CoOccurrencePairs \
+    /wiki/input /wiki/output1b_d1 -d 1
+
+time hadoop jar CoOccurrencePairs.jar CoOccurrencePairs \
+    /wiki/input /wiki/output1b_d2 -d 2
+
+time hadoop jar CoOccurrencePairs.jar CoOccurrencePairs \
+    /wiki/input /wiki/output1b_d3 -d 3
+
+time hadoop jar CoOccurrencePairs.jar CoOccurrencePairs \
+    /wiki/input /wiki/output1b_d4 -d 4
+
+# View output
+hdfs dfs -cat /wiki/output1b_d1/part-r-00000 | head -20
+hdfs dfs -cat /wiki/output1b_d1/part-r-00000 | wc -l
+
+================================================================
+PART (c): Co-Occurrence Matrix — Stripes Approach
+================================================================
+
+time hadoop jar CoOccurrenceStripes.jar CoOccurrenceStripes \
+    /wiki/input /wiki/output1c_d1 -d 1
+
+time hadoop jar CoOccurrenceStripes.jar CoOccurrenceStripes \
+    /wiki/input /wiki/output1c_d2 -d 2
+
+time hadoop jar CoOccurrenceStripes.jar CoOccurrenceStripes \
+    /wiki/input /wiki/output1c_d3 -d 3
+
+time hadoop jar CoOccurrenceStripes.jar CoOccurrenceStripes \
+    /wiki/input /wiki/output1c_d4 -d 4
+
+# View output
+hdfs dfs -cat /wiki/output1c_d1/part-r-00000 | head -20
+
+================================================================
+PART (e): Local Aggregation — Pairs MapFn
+================================================================
+
+time hadoop jar CoOccurrencePairsAgg.jar CoOccurrencePairsMapFn \
+    /wiki/input /wiki/output1e_pairs_mapfn_d1 -d 1
+
+time hadoop jar CoOccurrencePairsAgg.jar CoOccurrencePairsMapFn \
+    /wiki/input /wiki/output1e_pairs_mapfn_d2 -d 2
+
+time hadoop jar CoOccurrencePairsAgg.jar CoOccurrencePairsMapFn \
+    /wiki/input /wiki/output1e_pairs_mapfn_d3 -d 3
+
+time hadoop jar CoOccurrencePairsAgg.jar CoOccurrencePairsMapFn \
+    /wiki/input /wiki/output1e_pairs_mapfn_d4 -d 4
+
+================================================================
+PART (e): Local Aggregation — Pairs MapClass
+================================================================
+
+time hadoop jar CoOccurrencePairsAgg.jar CoOccurrencePairsMapClass \
+    /wiki/input /wiki/output1e_pairs_mapclass_d1 -d 1
+
+time hadoop jar CoOccurrencePairsAgg.jar CoOccurrencePairsMapClass \
+    /wiki/input /wiki/output1e_pairs_mapclass_d2 -d 2
+
+time hadoop jar CoOccurrencePairsAgg.jar CoOccurrencePairsMapClass \
+    /wiki/input /wiki/output1e_pairs_mapclass_d3 -d 3
+
+time hadoop jar CoOccurrencePairsAgg.jar CoOccurrencePairsMapClass \
+    /wiki/input /wiki/output1e_pairs_mapclass_d4 -d 4
+
+================================================================
+PART (e): Local Aggregation — Stripes MapFn
+================================================================
+
+time hadoop jar CoOccurrenceStripesAgg.jar CoOccurrenceStripesMapFn \
+    /wiki/input /wiki/output1e_stripes_mapfn_d1 -d 1
+
+time hadoop jar CoOccurrenceStripesAgg.jar CoOccurrenceStripesMapFn \
+    /wiki/input /wiki/output1e_stripes_mapfn_d2 -d 2
+
+time hadoop jar CoOccurrenceStripesAgg.jar CoOccurrenceStripesMapFn \
+    /wiki/input /wiki/output1e_stripes_mapfn_d3 -d 3
+
+time hadoop jar CoOccurrenceStripesAgg.jar CoOccurrenceStripesMapFn \
+    /wiki/input /wiki/output1e_stripes_mapfn_d4 -d 4
+
+================================================================
+PART (e): Local Aggregation — Stripes MapClass
+================================================================
+
+time hadoop jar CoOccurrenceStripesAgg.jar CoOccurrenceStripesMapClass \
+    /wiki/input /wiki/output1e_stripes_mapclass_d1 -d 1
+
+time hadoop jar CoOccurrenceStripesAgg.jar CoOccurrenceStripesMapClass \
+    /wiki/input /wiki/output1e_stripes_mapclass_d2 -d 2
+
+time hadoop jar CoOccurrenceStripesAgg.jar CoOccurrenceStripesMapClass \
+    /wiki/input /wiki/output1e_stripes_mapclass_d3 -d 3
+
+time hadoop jar CoOccurrenceStripesAgg.jar CoOccurrenceStripesMapClass \
+    /wiki/input /wiki/output1e_stripes_mapclass_d4 -d 4
+
+================================================================
+RETRIEVE OUTPUTS
+================================================================
+
+# Copy all outputs to local filesystem
+hdfs dfs -get /wiki/output1a/part-r-00000 output1a_top50words.tsv
+hdfs dfs -get /wiki/output1b_d1/part-r-00000 output1b_pairs_d1.tsv
+hdfs dfs -get /wiki/output1b_d2/part-r-00000 output1b_pairs_d2.tsv
+hdfs dfs -get /wiki/output1b_d3/part-r-00000 output1b_pairs_d3.tsv
+hdfs dfs -get /wiki/output1b_d4/part-r-00000 output1b_pairs_d4.tsv
+hdfs dfs -get /wiki/output1c_d1/part-r-00000 output1c_stripes_d1.tsv
+hdfs dfs -get /wiki/output1c_d2/part-r-00000 output1c_stripes_d2.tsv
+hdfs dfs -get /wiki/output1c_d3/part-r-00000 output1c_stripes_d3.tsv
+hdfs dfs -get /wiki/output1c_d4/part-r-00000 output1c_stripes_d4.tsv
+
+================================================================
+NOTES
+================================================================
+- If a job fails with "Output directory already exists", run:
+    hdfs dfs -rm -r /wiki/output1b_d1   (replace with correct path)
+- The 'time' command records wall-clock runtime for comparison.
+- All jobs were run on a single-node Hadoop setup on macOS.
+- Dataset: Wikipedia-EN-20120601_ARTICLES (10,000 articles, ~166MB)
